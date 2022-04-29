@@ -1,0 +1,21 @@
+{
+  "version": "1.0",
+  "defaultProvider": "jsdelivr",
+  "libraries": [
+    {
+      "library": "webcam.js@1.0.1",
+      "destination": "wwwroot/js/webcam.js/",
+      "files": [
+        "src/webcam.js",
+        "src/webcam.min.js"
+      ]
+    },
+    {
+      "library": "html5-qrcode@2.2.1",
+      "destination": "wwwroot/js/html5-qrcode/",
+      "files": [
+        "html5-qrcode.min.js"
+      ]
+    }
+  ]
+}

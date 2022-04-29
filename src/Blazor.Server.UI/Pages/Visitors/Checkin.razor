@@ -1,0 +1,248 @@
+@page "/visitor/checkin"
+
+
+@using Blazor.Server.UI.Services
+@using Blazor.Server.UI.Pages.CheckinPoints
+@using CleanArchitecture.Blazor.Application.Features.VisitorHistories.Commands.Create
+@using CleanArchitecture.Blazor.Application.Features.VisitorHistories.DTOs
+@using CleanArchitecture.Blazor.Application.Features.VisitorHistories.Queries.GetAll
+@using CleanArchitecture.Blazor.Application.Features.Visitors.Commands.Create
+@using CleanArchitecture.Blazor.Application.Features.Visitors.Commands.Delete
+@using CleanArchitecture.Blazor.Application.Features.Visitors.DTOs
+@using CleanArchitecture.Blazor.Application.Features.Visitors.Queries.Pagination
+@using CleanArchitecture.Blazor.Application.Features.Visitors.Commands.AddEdit
+@using CleanArchitecture.Blazor.Application.Features.Visitors.Queries.Search
+@using HashidsNet
+@using Net.Codecrete.QrCodeGenerator
+@using SixLabors.Fonts;
+@using SixLabors.ImageSharp;
+@using SixLabors.ImageSharp.Drawing;
+@using SixLabors.ImageSharp.Drawing.Processing;
+@using SixLabors.ImageSharp.Formats.Jpeg
+@using SixLabors.ImageSharp.PixelFormats;
+@using SixLabors.ImageSharp.Processing;
+@inject IJSRuntime JS
+@inject IStringLocalizer<Visitors> L
+@attribute [Authorize(Policy = Permissions.Visitors.Checkin)]
+<PageTitle>@Title</PageTitle>
+<style>
+    .mud-table-toolbar {
+        height: 84px !important;
+    }
+</style>
+<ErrorBoundary>
+    <ChildContent>
+        <MudGrid>
+            <MudItem xs="12" sm="5">
+                <div class="d-flex justify-center align-content-center">
+                    <MudCard Style="width:320px">
+                        <div id="my_camera" class="mud-card-media pa-0 ma-0" style="width:320px; height:240px;"></div>
+                        <MudCardActions Style="height:45px">
+                            <MudButton Variant="Variant.Text" OnClick="TakePhoto" Color="MudBlazor.Color.Primary"></MudButton>
+                        </MudCardActions>
+
+                    </MudCard>
+                </div>
+            </MudItem>
+
+
+            <MudItem xs="12" sm="5">
+                <div class="d-flex flex-column justify-center align-content-center">
+                    <MudCard Style="width:320px">
+                        @if (_notfound)
+                        {
+                            <MudAlert Severity="MudBlazor.Severity.Error">@L["Not found visitor"]</MudAlert>
+                        }
+                        <MudCardHeader>
+                            <CardHeaderContent>
+                                <MudText Typo="Typo.h6">@L["Scanning Code"]: @_decodedText</MudText>
+                            </CardHeaderContent>
+                        </MudCardHeader>
+                        <MudCardMedia Image="@request.Avatar" />
+                        <MudCardContent>
+                            <MudForm Model="request" @ref="form" Validation="@(modelValidator.ValidateValue)">
+                                <MudTextField For="@(() => request.Visitor)" Value="@request.Visitor" Label="@L["Visitor's Name"]" Required="true" RequiredError="visitor's Name is required!" />
+                                <MudTextField For="@(() => request.CompanyName)" Value="@request.CompanyName" Label="@L["Company Name"]" />
+                                <Blazor.Server.UI.Pages.Devices.CheckinPointAutocomplete Label="@L["Select Check-in Point"]"
+                                                                                         For="@(() => request.CheckinPointId)"
+                                                                                         @bind-Value="request.CheckinPointId"
+                                                                                         Required="true"
+                                                                                         RequiredError="@L["check-in point is required!"]"></Blazor.Server.UI.Pages.Devices.CheckinPointAutocomplete>
+                                <MudTextField For="@(() => request.Temperature)" @bind-Value="@request.Temperature"  Label="@L["Visitor's Temperature"]" Required="true" RequiredError="temperature is required!" />
+                                <MudTextField For="@(() => request.Comment)"
+                                              @bind-Value="request.Comment" Lines="3" Label="@L["Comment"]" />
+                            </MudForm>
+                        </MudCardContent>
+                        <MudCardActions Style="height:45px">
+                            <MudSwitch @bind-Checked="@_autoCheckin" Label="@L["Automatic Check-in"]" Color="MudBlazor.Color.Success" />
+                            <MudButton Variant="Variant.Text" Disabled="@_autoCheckin" OnClick="OnCheckin" Color="MudBlazor.Color.Primary">@L["Checkin-in"]</MudButton>
+                        </MudCardActions>
+                    </MudCard>
+
+                    <MudCard Class="mt-3" Style="width:320px">
+                        <MudCardHeader>
+                            <CardHeaderContent>
+                                <MudText Typo="Typo.h6">@L["Check-in Histories"] (0)</MudText>
+                            </CardHeaderContent>
+                        </MudCardHeader>
+                        <MudCardContent>
+                            @if (_visitorHistories.Count > 0)
+                            {
+                                <MudTimeline>
+                                    @foreach (var item in _visitorHistories)
+                                    {
+                                        <MudTimelineItem Color="MudBlazor.Color.Info" Size="MudBlazor.Size.Small">
+                                            <ItemOpposite>
+                                                <MudText Color="MudBlazor.Color.Info" Typo="Typo.body1">@item.CheckinPoint</MudText>
+                                            </ItemOpposite>
+                                            <ItemContent>
+                                                <MudText Color="MudBlazor.Color.Info" Typo="Typo.body2" GutterBottom="true">@item.TransitDateTime</MudText>
+                                                <MudText>@item.Comment</MudText>
+                                            </ItemContent>
+                                        </MudTimelineItem>
+
+                                    }
+                                </MudTimeline>
+                            }
+                        </MudCardContent>
+                    </MudCard>
+                </div>
+            </MudItem>
+
+        </MudGrid>
+    </ChildContent>
+    <ErrorContent>
+        <CustomError Exception="context"></CustomError>
+    </ErrorContent>
+</ErrorBoundary>
+@code {
+    MudForm form = default!;
+    public string? Title { get; private set; }
+    private bool _loading;
+    private bool _uploading;
+    private bool _autoCheckin;
+    private bool _notfound = false;
+    private string _imgUri;
+    private string _captionText;
+    private string _decodedText;
+
+    [Inject] private IUploadService _uploadService { get; set; } = default!;
+    [Inject]
+    private ISender _mediator { get; set; } = default!;
+    [Inject]
+    private Hashids hashids { get; set; } = default!;
+    [CascadingParameter]
+    protected Task<AuthenticationState> AuthState { get; set; } = default!;
+
+    private CreateVisitorHistoryCommand request { get; set; } = new CreateVisitorHistoryCommand();
+    private CreateVisitorHistoryCommandValidator modelValidator = new CreateVisitorHistoryCommandValidator();
+
+    private List<VisitorHistoryDto> _visitorHistories = new();
+    FontCollection collection = new FontCollection();
+    FontFamily sansFamily;
+    Font captionFont;
+
+    protected override async Task OnInitializedAsync()
+    {
+        captionFont = SystemFonts.CreateFont("Arial", 23, FontStyle.Bold);
+        Title = L["Check-in"];
+        var state = await AuthState;
+    }
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await JS.InvokeVoidAsync("initalScanner", "my_camera", DotNetObjectReference.Create(this));
+        }
+        await base.OnAfterRenderAsync(firstRender);
+    }
+    private async Task TakePhoto(MouseEventArgs e)
+    {
+        await JS.InvokeVoidAsync("takeSnapshot", DotNetObjectReference.Create(this));
+    }
+    [JSInvokable]
+    public async Task GetResult(string decodedText)
+    {
+        _decodedText = decodedText;
+        var visitor = await _mediator.Send(new SearchVisitorQuery(decodedText));
+        if (visitor is null)
+        {
+            _notfound = true;
+        }
+        else
+        {
+            request = new CreateVisitorHistoryCommand()
+                {
+                    Avatar = visitor.Avatar,
+                    CompanyName = visitor.CompanyName,
+                    VisitorId = visitor.Id,
+                    Visitor = visitor.Name,
+                    CheckinPointId = null,
+
+                };
+        }
+        StateHasChanged();
+    }
+    [JSInvokable]
+    public Task ClearResult()
+    {
+        //_decodedText = "";
+        //StateHasChanged();
+        return Task.CompletedTask;
+    }
+    [JSInvokable]
+    public Task ProcessImage(string imageString)
+    {
+        byte[] imageData = Convert.FromBase64String(imageString.Split(',')[1]);
+        _captionText = "adGaLOJWKjjb";
+        //Do image processing here
+
+        var drawingOptions = new DrawingOptions()
+            {
+                GraphicsOptions = new GraphicsOptions()
+                {
+
+                }
+            };
+        var textOptions = new TextOptions(captionFont)
+            {
+                TextAlignment = TextAlignment.Center,
+                HorizontalAlignment = SixLabors.Fonts.HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Bottom,
+            };
+
+        using (var image = Image.Load(imageData))
+        {
+            var width = image.Width;
+            var height = image.Height + 50;
+            var resizeOptions = new ResizeOptions()
+                {
+                    Mode = ResizeMode.Pad,
+                    PadColor = SixLabors.ImageSharp.Color.Black,
+                    Size = new SixLabors.ImageSharp.Size(width, height),
+                    Position = AnchorPositionMode.TopLeft
+
+                };
+            image.Mutate(x => x
+                .Flip(FlipMode.Horizontal) //To match mirrored webcam image
+                .Resize(resizeOptions)
+                .Fill(SixLabors.ImageSharp.Color.ParseHex("0008"), new RectangularPolygon(0, 240, 320, 50)) //Set footer bar for caption
+                .DrawText(drawingOptions, _captionText, captionFont, SixLabors.ImageSharp.Color.White, new PointF(75, 252)) //center in footer bar)
+            );
+            _imgUri = image.ToBase64String(JpegFormat.Instance);
+        }
+        return Task.CompletedTask;
+    }
+
+    private async Task OnCheckin()
+    {
+        await form.Validate();
+        if (form.IsValid)
+        {
+            var result = await _mediator.Send(request);
+            Snackbar.Add(string.Format(L["{0} check-in successfully"], request.Visitor), MudBlazor.Severity.Info);
+            _visitorHistories = (await _mediator.Send(new GetByVisitorIdVisitorHistoriesQuery(request.VisitorId))).ToList();
+        }
+    }
+
+}
