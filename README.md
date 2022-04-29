@@ -1,8 +1,15 @@
-# visitor management
+#Team Members
+# 1. Vaibhav 2K20/SE/150
+# 2. Naman   2K20/SE/85
+# 3. Vardhan Suri 2K20/SE/155
+# 4. Sharda Nanda Jha  2K20/SE/125
+# 5. Tushar Panchal    2K20/SE/146
+# 6. Umang             2K20/SE/148
+# Campus Security Management System
 helps in managing visitors visiting the institutions for various reasons. It allows visitors to check-in digitally to eliminate the tedious registeration and other paperwork. Additionally, it also keeps a track of every individual inside the campus and their timings. Institutions has guards who enter their detail in some notebooks to keep a log which are practically impossible to reconcile. It is really unpleasent and hectic for visitor to stand at the gate and give details about the visit. To ease the process of registeration, Entry-In, Entry-Out, time tracking and logging the history, this VMS can be of great use!! 
 
 # Live Demo
-+ http://106.52.105.140:6103/ (Please use IP access if you are from outside China)
++ http://106.52.105.140:6103/ 
 + https://visitor.dotnet6.cn/
 
 ![Dashboard](doc/1.jpg)
